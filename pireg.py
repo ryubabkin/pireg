@@ -2,6 +2,7 @@ from typing import Union
 import warnings
 import pickle
 import numpy as np
+from texttable import Texttable
 
 import core.optimizers as _o
 import core.plots as _p
@@ -26,6 +27,10 @@ class PeriodicRegression(object):
         self.n_freq = 3
         self.q_freq = 0.95
         self.params = _c.DotDict()
+        self._total_iterations = 0
+
+    def __call__(self, *args, **kwargs):
+        self._info()
 
     def fit(
             self,
@@ -75,7 +80,9 @@ class PeriodicRegression(object):
             X=interval
         )
         self._fitted = True
-        print(self.weights)
+        self._total_iterations += n_iterations
+        if self.verbose:
+            self._info()
         return None
 
     def predict(
@@ -95,8 +102,7 @@ class PeriodicRegression(object):
             weights.append(self.Fs)
             weights.append(self.top_spectrum[1, n] * np.cos(self.top_spectrum[2, n]))
             weights.append(self.top_spectrum[1, n] * np.sin(self.top_spectrum[2, n]))
-        self.weights = np.array(weights)
-        print(self.weights)
+        self.weights = np.array(weights).reshape(-1, 1)
 
     def _optimize(
             self,
@@ -104,43 +110,64 @@ class PeriodicRegression(object):
             Y: np.ndarray
     ):
         if self.params.optimizer == 'sgd':
-            self.weights, self.loss = _o.SGD(
-                Y=Y,
-                X=X,
-                F=self.frequencies,
-                W=self.weights,
-                params=self.params,
-                verbose=self.verbose
-            )
+            self.weights, self.loss = _o.SGD(self.params).run(X, Y, self.frequencies, self.weights)
         elif self.params.optimizer == 'rmsprop':
-            self.weights, self.loss = _o.RMSProp(
-                Y=Y,
-                X=X,
-                F=self.frequencies,
-                W=self.weights,
-                params=self.params,
-                verbose=self.verbose
-            )
+            self.weights, self.loss = _o.RMSProp(self.params).run(X, Y, self.frequencies, self.weights)
         elif self.params.optimizer == 'adam':
-            self.weights, self.loss = _o.ADAM(
-                Y=Y,
-                X=X,
-                F=self.frequencies,
-                W=self.weights,
-                params=self.params,
-                verbose=self.verbose
-            )
+            self.weights, self.loss = _o.Adam(self.params).run(X, Y, self.frequencies, self.weights)
         elif self.params.optimizer == 'adamax':
-            self.weights, self.loss = _o.ADAMax(
-                Y=Y,
-                X=X,
-                F=self.frequencies,
-                W=self.weights,
-                params=self.params,
-                verbose=self.verbose
-            )
+            self.weights, self.loss = _o.AdaMax(self.params).run(X, Y, self.frequencies, self.weights)
         else:
             print('Not implemented yet')
+
+    def _info(self):
+        print()
+        table = Texttable()
+        table.set_deco(Texttable.HEADER | Texttable.VLINES)
+        table.set_cols_dtype(['t', 'a'])
+        table.set_cols_valign(['m', 'm'])
+        list_of_values = [["Parameter", "Value"]]
+        list_of_values += [['n_freq', self.n_freq], ['q_freq', self.q_freq]]
+        list_of_values += ([[str(key), str(value)] for key, value in self.params.items()])
+        list_of_values += [['================', '============='],
+                           ['total iterations', self._total_iterations],
+                           ['rmse loss', self.loss[-1]],
+                           ['# frequencies', len(self.frequencies)],
+                           ['sample frequency', round(self.Fs, 7)]]
+
+        table.add_rows(list_of_values)
+        print(table.draw())
+        print()
+
+        table = Texttable()
+        table.set_deco(Texttable.HEADER)
+        table.set_cols_dtype(['e', 'f', 'f', 'f', 'f', 'f'])
+        table.set_cols_valign(['m', 'm', 'm', 'm', 'm', 'm'])
+
+        list_of_values = [["Frequency", "FS", "A(cos)", "B(sin)", 'Intencity', 'Phase']]
+        intercept = round(self.weights[0][0], 5)
+        formula = f'Y = {intercept}'
+        for n in range(len(self.frequencies)):
+            freq = round(self.frequencies[n], 5)
+            intencity = round(np.sqrt(self.weights[3 * n + 2] ** 2 + self.weights[3 * n + 3] ** 2)[0], 5)
+            phase = round(np.arctan(self.weights[3 * n + 3] / self.weights[3 * n + 2])[0], 5)
+            fs = round(self.weights[3 * n + 1][0], 5)
+            freq_fs = round(freq * fs, 5)
+            A, B = round(self.weights[3 * n + 2][0], 5), round([3 * n + 3][0], 5)
+            list_of_values += [[self.frequencies[n], fs, A, B, intencity, phase]]
+            if phase > 0:
+                formula += f" + {intencity}*cos(2*pi*{freq_fs}*X - {phase})"
+            else:
+                formula += f" + {intencity}*cos(2*pi*{freq_fs}*X + {-phase})"
+        list_of_values += [['intercept', self.weights[0], '', '', '', '']]
+
+        table.add_rows(list_of_values)
+        print(table.draw())
+
+        print('\nTotal Formula\n===============')
+        print("Y = A0 + Σ (A_i * cos(2*π * f_i * fs_i * X - φ_i) )")
+        print(formula)
+        print()
 
     def plot_loss(
             self,

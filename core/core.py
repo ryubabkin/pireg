@@ -56,12 +56,12 @@ def calculate_spectrum(
         n = len(frequencies)
         if n < int(n_freq):
             if n > 1:
-                print(f'(WARNING) Only {n} frequencies were found. n_freq is set to {n}')
+                print(f'(!) Only {n} frequencies were found. n_freq is set to {n}')
             if n == 1:
-                print(f'(WARNING) Only 1 frequency was found. n_freq is set to 1')
+                print(f'(!) Only 1 frequency was found. n_freq is set to 1')
             if n == 0:
                 raise ValueError('No frequencies found')
-        print("Spectrum was calculated. Use:\n"
+        print("\nSpectrum was calculated. Use:\n"
               "*.spectrum to get the whole spectrum\n"
               f"*.top_spectrum to get top {int(n_freq)} peaks spectrum\n"
               f"*.plot_spectrum() to view the result\n")

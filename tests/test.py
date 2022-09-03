@@ -20,14 +20,14 @@ reg.fit(
     n_freq=4,
     q_freq=0.99,
     learning_rate=0.0001,
-    n_iterations=100,
+    n_iterations=1,
     decay=(0.9, 0.999),
-    optimizer='adam'
+    optimizer='sgd'
 )
 reg.plot_spectrum(log=True)
 reg.plot_loss()
 pred = reg.predict(x1)
-print(reg.top_spectrum)
+
 plt.figure()
 plt.plot(x1, y1)
 plt.plot(x1, pred, alpha=0.5)
