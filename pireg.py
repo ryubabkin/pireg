@@ -13,12 +13,12 @@ warnings.filterwarnings("ignore")
 
 class PeriodicRegression(object):
     def __init__(self):
-        self._fitted = False
+        self.fit_intercept = True
         self.verbose = True
+        self._fitted = False
         self.__module__ = "PeriodicRegressionClass"
         self.spectrum = None
         self.top_spectrum = None
-        self.trend = None
         self.loss = []
         self.frequencies = None
         self.weights = None
@@ -45,8 +45,8 @@ class PeriodicRegression(object):
             'learning_rate': learning_rate,
             'n_iterations': int(n_iterations),
             'decay': decay,
-            'verbose': verbose,
-            'drop': drop
+            'drop': drop,
+            'verbose': verbose
         })
         _v.check_input(
             length_Y=len(signal),
@@ -65,16 +65,17 @@ class PeriodicRegression(object):
             self.q_freq = q_freq
             self.spectrum, self.top_spectrum, self.frequencies = _c.calculate_spectrum(
                 signal=signal,
+                Fs=self.Fs,
                 n_freq=self.n_freq,
                 q_freq=self.q_freq
             )
             self._init_weights()
-
         self._optimize(
             Y=signal,
             X=interval
         )
         self._fitted = True
+        print(self.weights)
         return None
 
     def predict(
@@ -89,7 +90,13 @@ class PeriodicRegression(object):
         return signal
 
     def _init_weights(self):
-        self.weights = np.array([self.Fs, 0, 0] * self.n_freq)
+        weights = [0]
+        for n in range(self.n_freq):
+            weights.append(self.Fs)
+            weights.append(self.top_spectrum[1, n] * np.cos(self.top_spectrum[2, n]))
+            weights.append(self.top_spectrum[1, n] * np.sin(self.top_spectrum[2, n]))
+        self.weights = np.array(weights)
+        print(self.weights)
 
     def _optimize(
             self,
@@ -102,7 +109,8 @@ class PeriodicRegression(object):
                 X=X,
                 F=self.frequencies,
                 W=self.weights,
-                params=self.params
+                params=self.params,
+                verbose=self.verbose
             )
         elif self.params.optimizer == 'rmsprop':
             self.weights, self.loss = _o.RMSProp(
@@ -110,15 +118,26 @@ class PeriodicRegression(object):
                 X=X,
                 F=self.frequencies,
                 W=self.weights,
-                params=self.params
+                params=self.params,
+                verbose=self.verbose
             )
-        if self.params.optimizer == 'adam':
+        elif self.params.optimizer == 'adam':
             self.weights, self.loss = _o.ADAM(
                 Y=Y,
                 X=X,
                 F=self.frequencies,
                 W=self.weights,
-                params=self.params
+                params=self.params,
+                verbose=self.verbose
+            )
+        elif self.params.optimizer == 'adamax':
+            self.weights, self.loss = _o.ADAMax(
+                Y=Y,
+                X=X,
+                F=self.frequencies,
+                W=self.weights,
+                params=self.params,
+                verbose=self.verbose
             )
         else:
             print('Not implemented yet')

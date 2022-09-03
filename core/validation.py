@@ -18,6 +18,6 @@ def check_input(
         raise ValueError('Array lengths are incomparable')
     if params.n_iterations <= 0:
         raise ValueError('"n_iterations" be greater than zero')
-    if params.optimizer not in ['sgd', 'rmsprop', 'adam']:
-        raise ValueError('"optimizer should be one of "gd", "sgd", "rmsprop", or "adam"')
+    if params.optimizer not in ['sgd', 'rmsprop', 'adam', 'adamax']:
+        raise ValueError('"optimizer should be one of "sgd", "rmsprop", "adam" or "adamax"')
 

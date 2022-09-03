@@ -28,18 +28,20 @@ def generate_signal(
 ) -> np.ndarray:
     total = np.zeros(len(X))
     for n in range(len(F)):
-        total += W[3 * n + 1] * sin(2 * pi * F[n] * W[3 * n] * X) + W[3 * n + 2] * cos(2 * pi * F[n] * W[3 * n] * X)
+        total += W[3 * n + 2] * sin(2 * pi * F[n] * W[3 * n + 1] * X) + W[3 * n + 3] * cos(2 * pi * F[n] * W[3 * n + 1] * X)
+    total += W[0]
     return total
 
 
 def calculate_spectrum(
         signal: np.ndarray,
+        Fs: float,
         n_freq: int = 3,
-        q_freq: float = 0.95
+        q_freq: float = 0.95,
     ) -> (np.ndarray, np.ndarray, np.ndarray):
         frequency = np.fft.rfftfreq(signal.size)
         intensity = np.fft.rfft(signal, norm='ortho')
-        amplitude = np.abs(intensity)
+        amplitude = np.abs(intensity) / Fs * 2
         phase = np.angle(intensity)
         min_height = np.quantile(amplitude, q_freq)
         peaks, _ = find_peaks(amplitude, height=min_height)
