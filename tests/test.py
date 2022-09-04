@@ -20,7 +20,7 @@ reg.fit(
     n_freq=4,
     q_freq=0.99,
     learning_rate=0.0001,
-    n_iterations=1,
+    n_iterations=100,
     decay=(0.9, 0.999),
     optimizer='sgd'
 )

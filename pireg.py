@@ -2,7 +2,6 @@ from typing import Union
 import warnings
 import pickle
 import numpy as np
-from texttable import Texttable
 
 import core.optimizers as _o
 import core.plots as _p
@@ -121,53 +120,9 @@ class PeriodicRegression(object):
             print('Not implemented yet')
 
     def _info(self):
-        print()
-        table = Texttable()
-        table.set_deco(Texttable.HEADER | Texttable.VLINES)
-        table.set_cols_dtype(['t', 'a'])
-        table.set_cols_valign(['m', 'm'])
-        list_of_values = [["Parameter", "Value"]]
-        list_of_values += [['n_freq', self.n_freq], ['q_freq', self.q_freq]]
-        list_of_values += ([[str(key), str(value)] for key, value in self.params.items()])
-        list_of_values += [['================', '============='],
-                           ['total iterations', self._total_iterations],
-                           ['rmse loss', self.loss[-1]],
-                           ['# frequencies', len(self.frequencies)],
-                           ['sample frequency', round(self.Fs, 7)]]
-
-        table.add_rows(list_of_values)
-        print(table.draw())
-        print()
-
-        table = Texttable()
-        table.set_deco(Texttable.HEADER)
-        table.set_cols_dtype(['e', 'f', 'f', 'f', 'f', 'f'])
-        table.set_cols_valign(['m', 'm', 'm', 'm', 'm', 'm'])
-
-        list_of_values = [["Frequency", "FS", "A(cos)", "B(sin)", 'Intencity', 'Phase']]
-        intercept = round(self.weights[0][0], 5)
-        formula = f'Y = {intercept}'
-        for n in range(len(self.frequencies)):
-            freq = round(self.frequencies[n], 5)
-            intencity = round(np.sqrt(self.weights[3 * n + 2] ** 2 + self.weights[3 * n + 3] ** 2)[0], 5)
-            phase = round(np.arctan(self.weights[3 * n + 3] / self.weights[3 * n + 2])[0], 5)
-            fs = round(self.weights[3 * n + 1][0], 5)
-            freq_fs = round(freq * fs, 5)
-            A, B = round(self.weights[3 * n + 2][0], 5), round([3 * n + 3][0], 5)
-            list_of_values += [[self.frequencies[n], fs, A, B, intencity, phase]]
-            if phase > 0:
-                formula += f" + {intencity}*cos(2*pi*{freq_fs}*X - {phase})"
-            else:
-                formula += f" + {intencity}*cos(2*pi*{freq_fs}*X + {-phase})"
-        list_of_values += [['intercept', self.weights[0], '', '', '', '']]
-
-        table.add_rows(list_of_values)
-        print(table.draw())
-
-        print('\nTotal Formula\n===============')
-        print("Y = A0 + Σ (A_i * cos(2*π * f_i * fs_i * X - φ_i) )")
-        print(formula)
-        print()
+        _p.info_table(self)
+        if self._fitted:
+            _p.result_table(self)
 
     def plot_loss(
             self,
