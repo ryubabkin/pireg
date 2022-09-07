@@ -38,19 +38,25 @@ class PeriodicRegression(object):
             n_freq: int = 3,
             q_freq: float = 0.95,
             optimizer: str = 'sgd',
+            loss: str = 'mse',
             learning_rate: float = 0.01,
             n_iterations: int = 100,
             decay: Union[float, tuple] = (0.9, 0.999),
+            epsilon: float = 1.35,
+            use_constraints: float = True,
             verbose: bool = True,
             drop: bool = False
     ):
         self.params = _c.DotDict({
+            'loss': loss,
             'optimizer': optimizer,
             'learning_rate': learning_rate,
             'n_iterations': int(n_iterations),
             'decay': decay,
             'drop': drop,
-            'verbose': verbose
+            'verbose': verbose,
+            'epsilon': epsilon,
+            'use_constraints': use_constraints
         })
         _v.check_input(
             length_Y=len(signal),
@@ -99,8 +105,10 @@ class PeriodicRegression(object):
         weights = [0]
         for n in range(self.n_freq):
             weights.append(self.Fs)
-            weights.append(self.top_spectrum[1, n] * np.cos(self.top_spectrum[2, n]))
-            weights.append(self.top_spectrum[1, n] * np.sin(self.top_spectrum[2, n]))
+            weights.append(self.top_spectrum[1, n])
+            weights.append(self.top_spectrum[2, n])
+            # weights.append(0)
+            # weights.append(0)
         self.weights = np.array(weights).reshape(-1, 1)
 
     def _optimize(
@@ -109,15 +117,19 @@ class PeriodicRegression(object):
             Y: np.ndarray
     ):
         if self.params.optimizer == 'sgd':
-            self.weights, self.loss = _o.SGD(self.params).run(X, Y, self.frequencies, self.weights)
+            self.weights, error = _o.SGD(self.params).run(X, Y, self.frequencies, self.weights)
         elif self.params.optimizer == 'rmsprop':
-            self.weights, self.loss = _o.RMSProp(self.params).run(X, Y, self.frequencies, self.weights)
+            self.weights, error = _o.RMSProp(self.params).run(X, Y, self.frequencies, self.weights)
         elif self.params.optimizer == 'adam':
-            self.weights, self.loss = _o.Adam(self.params).run(X, Y, self.frequencies, self.weights)
+            self.weights, error = _o.Adam(self.params).run(X, Y, self.frequencies, self.weights)
         elif self.params.optimizer == 'adamax':
-            self.weights, self.loss = _o.AdaMax(self.params).run(X, Y, self.frequencies, self.weights)
+            self.weights, error = _o.AdaMax(self.params).run(X, Y, self.frequencies, self.weights)
+        elif self.params.optimizer == 'mixed':
+            self.weights, error = _o.MIXED(self.params).run(X, Y, self.frequencies, self.weights)
         else:
             print('Not implemented yet')
+            error = []
+        self.loss = np.mean(np.abs(error), axis=1)
 
     def _info(self):
         _p.info_table(self)

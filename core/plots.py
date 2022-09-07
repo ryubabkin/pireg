@@ -13,9 +13,9 @@ def plot_loss(
     plt.axhline(0, c='lightgray')
     if log:
         plt.yscale('log')
-        plt.ylabel('RMSE loss [log scale]', fontsize=15)
+        plt.ylabel('Loss [log scale]', fontsize=15)
     else:
-        plt.ylabel('RMSE loss', fontsize=15)
+        plt.ylabel('Loss', fontsize=15)
     plt.xticks(fontsize=12)
     plt.yticks(fontsize=12)
     plt.xlabel('Epochs', fontsize=15)
@@ -48,6 +48,7 @@ def plot_spectrum(
         plt.xlabel('Frequency', fontsize=15)
     plt.xticks(fontsize=12)
     plt.yticks(fontsize=12)
+    plt.ylim(0, top_spectrum[1, :].max()*1.01)
     plt.ylabel('Intensity [arb.units]', fontsize=15)
     plt.title('Signal spectrum', fontsize=15)
     plt.tight_layout()
@@ -68,7 +69,7 @@ def info_table(regr):
     list_of_values += [['================', '============='],
                        ['fitted', str(regr._fitted)],
                        ['total iterations', regr._total_iterations],
-                       ['rmse loss', regr.loss[-1]],
+                       ['mae', regr.loss[-1]],
                        ['# frequencies', len(regr.frequencies)],
                        ['sample frequency', round(regr.Fs, 7)]]
 
@@ -80,25 +81,24 @@ def info_table(regr):
 def result_table(regr):
     table = Texttable()
     table.set_deco(Texttable.HEADER)
-    table.set_cols_dtype(['e', 'f', 'f', 'f', 'f', 'f'])
-    table.set_cols_valign(['m', 'm', 'm', 'm', 'm', 'm'])
+    table.set_cols_dtype(['e', 'f', 'f', 'f'])
+    table.set_cols_valign(['m', 'm', 'm', 'm'])
 
-    list_of_values = [["Frequency", "FS", "A(cos)", "B(sin)", 'Intencity', 'Phase']]
+    list_of_values = [["Frequency", "FS", 'Intensity', 'Phase']]
     intercept = round(regr.weights[0][0], 5)
     formula = f'Y = {intercept}'
     for n in range(len(regr.frequencies)):
         freq = round(regr.frequencies[n], 5)
-        intencity = round(sqrt(regr.weights[3 * n + 2] ** 2 + regr.weights[3 * n + 3] ** 2)[0], 5)
-        phase = round(arctan(regr.weights[3 * n + 3] / regr.weights[3 * n + 2])[0], 5)
         fs = round(regr.weights[3 * n + 1][0], 5)
+        intensity = round(regr.weights[3 * n + 2][0], 5)
+        phase = round(regr.weights[3 * n + 3][0], 5)
         freq_fs = round(freq * fs, 5)
-        A, B = round(regr.weights[3 * n + 2][0], 5), round([3 * n + 3][0], 5)
-        list_of_values += [[regr.frequencies[n], fs, A, B, intencity, phase]]
+        list_of_values += [[regr.frequencies[n], fs, intensity, phase]]
         if phase > 0:
-            formula += f" + {intencity}∙cos(2∙pi∙{freq_fs}∙X - {phase})"
+            formula += f" + {intensity}∙cos(2∙pi∙{freq_fs}∙X - {phase})"
         else:
-            formula += f" + {intencity}∙cos(2∙pi∙{freq_fs}∙X + {-phase})"
-    list_of_values += [['intercept', regr.weights[0], '', '', '', '']]
+            formula += f" + {intensity}∙cos(2∙pi∙{freq_fs}∙X + {-phase})"
+    list_of_values += [['intercept', regr.weights[0], '', '']]
 
     table.add_rows(list_of_values)
     print(table.draw())

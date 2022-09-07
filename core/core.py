@@ -28,8 +28,7 @@ def generate_signal(
 ) -> np.ndarray:
     total = np.zeros(len(X))
     for n in range(len(F)):
-        total += W[3 * n + 2] * sin(2 * pi * F[n] * W[3 * n + 1] * X) + W[3 * n + 3] * cos(2 * pi * F[n] * W[3 * n + 1] * X)
-    total += W[0]
+        total += W[3 * n + 2] * cos(2 * pi * F[n] * W[3 * n + 1] * X - W[3 * n + 3])
     return total
 
 
@@ -40,8 +39,8 @@ def calculate_spectrum(
         q_freq: float = 0.95,
     ) -> (np.ndarray, np.ndarray, np.ndarray):
         frequency = np.fft.rfftfreq(signal.size)
-        intensity = np.fft.rfft(signal, norm='ortho')
-        amplitude = np.abs(intensity) / Fs * 2
+        intensity = np.fft.rfft(signal)
+        amplitude = np.abs(intensity) / len(signal) * 2
         phase = np.angle(intensity)
         min_height = np.quantile(amplitude, q_freq)
         peaks, _ = find_peaks(amplitude, height=min_height)
@@ -89,3 +88,10 @@ def restore_trend(
     restored = array * polyvals[0] + polyvals[1]
     return restored
 
+
+def tune_lr(lr, i):
+    lr = lr / 1.05
+    if i % 25 == 0:
+        a = (i / 200 + 1)
+        lr = 0.1 / a
+    return lr
