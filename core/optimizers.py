@@ -1,9 +1,15 @@
 import numpy as np
 from numpy import pi, sin, cos
 import core.core as _c
+import matplotlib.pyplot as plt
+import pandas as pd
 
 
 class Loss(object):
+    """
+    {A} * cos (2 * pi * f * {cc} * X - {phi})
+    """
+
     def __init__(
             self,
             loss: str = 'mse',
@@ -12,23 +18,21 @@ class Loss(object):
         self.loss = loss
         self.epsilon = epsilon
 
-    "A * cos (2 * pi *f * fs * x - pi * sin(phi))"
+    @staticmethod
+    def dcc(x, f, cc, A, phi):
+        return - A * f * 2 * pi * x * sin(f * 2 * pi * cc * x - phi)
 
     @staticmethod
-    def dfs(x, f, fs, A, phi):
-        return - A * f * 2 * pi * x * sin(f * 2 * pi * fs * x - phi)
+    def dA(x, f, cc, phi):
+        return cos(f * 2 * pi * cc * x - phi)
 
     @staticmethod
-    def dA(x, f, fs, phi):
-        return cos(f * 2 * pi * fs * x - phi)
-
-    @staticmethod
-    def dphi(x, f, fs, A, phi):
-        return A * pi * sin(f * 2 * pi * fs * x - phi)
+    def dphi(x, f, cc, A, phi):
+        return A * pi * sin(f * 2 * pi * cc * x - phi)
 
     def grad_basis(self, x, f, W):
         return np.array([
-            self.dfs(x, f, W[0], W[1], W[2]),
+            self.dcc(x, f, W[0], W[1], W[2]),
             self.dA(x, f, W[0], W[2]),
             self.dphi(x, f, W[0], W[1], W[2])
         ])
@@ -53,15 +57,19 @@ class Optimizer(object):
             self,
             params: _c.DotDict,
     ):
-        self.loss = params.loss
+        self.A_init = None
+        self.Cc = params.Cc
+        self.batch_size = params.batch_size
         self.n_iterations = params.n_iterations
         self.learning_rate = params.learning_rate
-        self.decay = params.decay
+        self.momentum = params.momentum
         self.verbose = params.verbose
-        self.info = "Optimizer class"
-        self.epsilon = params.epsilon
-        self.L = Loss(loss=self.loss, epsilon=self.epsilon)
-        self.do_projection = params.use_constraints
+        self.info = 'Stochastic Gradient Descent with Momentum'
+        self.L = Loss(loss=params.loss, epsilon=params.epsilon)
+        self.lr_decay = params.lr_decay
+        self.c_max = None
+        self.n_frequencies = None
+        self.n = None
 
     @staticmethod
     def error(X, Y, F, W):
@@ -73,244 +81,94 @@ class Optimizer(object):
     def mae(self, X, Y, F, W):
         return np.mean(np.abs(self.error(X, Y, F, W)))
 
-    def update_cache(self, cache, grad) -> None:
-        return None
-
-    def run(self, X: np.ndarray, Y: np.ndarray, F: np.ndarray, W: np.ndarray) -> (None, None):
-        return None, None
-
     @staticmethod
-    def projection(W, N):
-        W[np.arange(N) * 3 + 1] = np.abs(W[np.arange(N) * 3 + 1])
-        W[np.arange(N) * 3 + 2] = np.abs(W[np.arange(N) * 3 + 2])
-        W[np.arange(N) * 3 + 3] -= W[np.arange(N) * 3 + 3] // (2 * pi) * 2 * pi
+    def update_cache(mu, cache, grad) -> np.ndarray:
+        return mu * cache + (1 - mu) * grad
+
+    def set_params(self, X, F, W):
+        self.n_frequencies = len(F)
+        self.n = np.arange(self.n_frequencies) * 3
+
+        # initial intensities
+        self.A_init = W[np.arange(self.n_frequencies) * 3 + 1].copy()
+
+        # projection params:
+        d = max(X)-min(X)
+        P = 0.99 - 4.9 / (d * F.reshape(-1, 1)) ** 1.5
+        self.c_max = (1 / P) ** (1 / 1.5) * 1.01
+
+    def run(
+            self,
+            X: np.ndarray,
+            Y: np.ndarray,
+            F: np.ndarray,
+            W: np.ndarray
+    ) -> (np.ndarray, list):
+        self.set_params(X, F, W)
+        indxs = np.arange(len(X))
+        RES = W.copy()
+        error = []
+        cache = np.zeros((3 * self.n_frequencies + 1, 1))
+        for epoch in range(self.n_iterations):
+            np.random.shuffle(indxs)
+            lr = self.update_lr(epoch)
+            mu = self.update_mu(epoch)
+            for i in range(0, len(X), self.batch_size):
+                Xs, Ys = X[indxs][i:i + self.batch_size], Y[indxs][i:i + self.batch_size]
+                err = np.mean(self.error(Xs, Ys, F, W))
+                for n in range(self.n_frequencies):
+                    grads = np.mean(self.L.grad(err, Xs, F[n], W[3 * n + 1:3 * n + 4]), axis=1).reshape(-1, 1)
+                    cache[3 * n + 1:3 * n + 4] = self.update_cache(mu, cache[3 * n + 1:3 * n + 4], grads)
+                    W[3 * n + 1:3 * n + 4] -= lr * cache[3 * n + 1:3 * n + 4]
+                W[0] -= lr * err
+                W = self.projection(W)
+                if i % 100 == 0:
+                    RES = np.hstack((RES, W))
+            epoch_error = self.error(X, Y, F, W)
+            error.append(epoch_error)
+            if self.verbose:
+                # if epoch % 20 == 0:
+                #     self.plot(X, Y, F, W, epoch)
+                print(f"Epoch {epoch + 1}: "
+                      f"MAE = {np.round(self.mae(X, Y, F, W),5)}, "
+                      f"LR = {'{:.3e}'.format(lr)}, "
+                      f"MU={'{:.3e}'.format(mu)}"
+                      )
+        self.plot(X, Y, F, W, epoch)
+        pd.DataFrame(RES.T).to_csv('./res/R.csv', index=False)
+        return W, error
+
+    def projection(self, W):
+        # Conversion coefficient (Cc) constraints
+
+        W[self.n + 1] = np.where(W[self.n + 1] < self.Cc * 1, self.Cc * 1, W[self.n + 1])
+        W[self.n + 1] = np.where(W[self.n + 1] > self.Cc * self.c_max, self.Cc * self.c_max, W[self.n + 1])
+
+        # Intensity (A) constraints
+        W[self.n + 2] = np.where(W[self.n + 2] < self.A_init, self.A_init, W[self.n + 2])
+
+        # Phase (phi) constraints
+        W[self.n + 3] -= W[self.n + 3] // (2 * pi) * 2 * pi
+
         return W
 
+    def update_lr(self, i):
+        p_t = 1 - i / self.n_iterations
+        return self.learning_rate * p_t / ((1 - self.learning_rate) + self.learning_rate * p_t)
 
-class SGD(Optimizer):
-    def __init__(
-            self,
-            params: _c.DotDict
-    ):
-        Optimizer.__init__(self, params)
-        self.info = 'Stochastic Gradient Descent with Momentum'
-        if type(self.decay) == tuple:
-            self.decay = self.decay[0]
-            print(f'(!) decay value was set to {self.decay} for sgd optimizer')
+    def update_mu(self, i):
+        p_t = 1 - i / self.n_iterations
+        return self.momentum * p_t / ((1 - self.momentum) + self.momentum * p_t)
 
-    def update_cache(self, cache, grad) -> np.ndarray:
-        return self.decay * cache + (1 - self.decay) * grad
-
-    def run(
-            self,
-            X: np.ndarray,
-            Y: np.ndarray,
-            F: np.ndarray,
-            W: np.ndarray,
-    ) -> (np.ndarray, list):
-        # IQR = 1.5 * (np.quantile(Y, 0.75) - np.quantile(Y, 0.25))
-        error = []
-        cache = np.zeros((3 * len(F) + 1, 1))
-        for epoch in range(self.n_iterations):
-            for i in range(len(X)):
-                err = np.mean(self.error(X[i:i + 1], Y[i:i + 1], F, W))
-                for n in range(len(F)):
-                    grads = self.L.grad(err, X[i:i + 1], F[n], W[3 * n + 1:3 * n + 4])
-                    cache[3 * n + 1:3 * n + 4] = self.update_cache(cache[3 * n + 1:3 * n + 4], grads)
-                    W[3 * n + 1:3 * n + 4] -= self.learning_rate * cache[3 * n + 1:3 * n + 4]
-                if self.do_projection:
-                    W = self.projection(W, len(F))
-            epoch_error = self.error(X, Y, F, W)
-            if self.verbose:
-                print(f"Epoch {epoch + 1}: MAE = {self.mae(X, Y, F, W)}, RMSE = {self.rmse(X, Y, F, W)}")
-            error.append(epoch_error)
-            # self.learning_rate = _c.tune_lr(self.learning_rate, epoch)
-
-        return W, error
-
-
-class RMSProp(Optimizer):
-    def __init__(
-            self,
-            params: _c.DotDict
-    ):
-        Optimizer.__init__(self, params)
-        self.info = 'Root Mean Square Propagation'
-        if type(self.decay) == tuple:
-            self.decay = self.decay[0]
-            print(f'(!) decay value was set to {self.decay} for rmsprop optimizer')
-
-    def update_cache(self, cache, grad) -> np.ndarray:
-        return self.decay * cache + (1 - self.decay) * grad ** 2
-
-    def run(
-            self,
-            X: np.ndarray,
-            Y: np.ndarray,
-            F: np.ndarray,
-            W: np.ndarray,
-    ) -> (np.ndarray, list):
-        error = []
-        cache = np.zeros((3 * len(F) + 1, 1))
-        for epoch in range(self.n_iterations):
-            for i in range(len(X)):
-                err = np.mean(self.error(X[i:i + 1], Y[i:i + 1], F, W))
-                for n in range(len(F)):
-                    grads = self.L.grad(err, X[i:i + 1], F[n], W[3 * n + 1:3 * n + 4])
-                    cache[3 * n + 1:3 * n + 4] = self.update_cache(cache[3 * n + 1:3 * n + 4], grads)
-                    W[3 * n + 1:3 * n + 4] -= self.learning_rate * grads / (np.sqrt(cache[3 * n + 1:3 * n + 4]) + 1e-9)
-                if self.do_projection:
-                    W = self.projection(W, len(F))
-            epoch_error = self.error(X, Y, F, W)
-            if self.verbose:
-                print(f"Epoch {epoch + 1}: MAE = {self.mae(X, Y, F, W)}, RMSE = {self.rmse(X, Y, F, W)}")
-            error.append(epoch_error)
-            self.learning_rate = _c.tune_lr(self.learning_rate, epoch)
-        return W, error
-
-
-class Adam(Optimizer):
-    def __init__(
-            self,
-            params: _c.DotDict
-    ):
-        Optimizer.__init__(self, params)
-        self.info = 'Adaptive Movement Estimation'
-        if type(self.decay) != tuple:
-            raise ValueError('Parameter "decay" must be a tuple for adam optimizer')
-        self.d1, self.d2 = self.decay[0], self.decay[1]
-
-    def update_cache1(self, cache, grad) -> np.ndarray:
-        return self.d1 * cache + (1 - self.d1) * grad
-
-    def update_cache2(self, cache, grad) -> np.ndarray:
-        return self.d2 * cache + (1 - self.d2) * grad ** 2
-
-    def run(
-            self,
-            X: np.ndarray,
-            Y: np.ndarray,
-            F: np.ndarray,
-            W: np.ndarray,
-    ) -> (np.ndarray, list):
-        error = []
-        cache1, cache2 = np.zeros((3 * len(F) + 1, 1)), np.zeros((3 * len(F) + 1, 1))
-        for epoch in range(self.n_iterations):
-            for i in range(len(X)):
-                err = np.mean(self.error(X[i:i + 1], Y[i:i + 1], F, W))
-                for n in range(len(F)):
-                    grads = self.L.grad(err, X[i:i + 1], F[n], W[3 * n + 1:3 * n + 4])
-                    cache1[3 * n + 1:3 * n + 4] = self.update_cache1(cache1[3 * n + 1:3 * n + 4], grads)
-                    cache2[3 * n + 1:3 * n + 4] = self.update_cache2(cache2[3 * n + 1:3 * n + 4], grads)
-                    M1 = cache1[3 * n + 1:3 * n + 4] / (1 - self.d1 ** (epoch + 1))
-                    M2 = cache2[3 * n + 1:3 * n + 4] / (1 - self.d2 ** (epoch + 1))
-                    W[3 * n + 1:3 * n + 4] -= self.learning_rate * M1 / (np.sqrt(M2) + 1e-9)
-                if self.do_projection:
-                    W = self.projection(W, len(F))
-            epoch_error = self.error(X, Y, F, W)
-            if self.verbose:
-                print(f"Epoch {epoch + 1}: MAE = {self.mae(X, Y, F, W)}, RMSE = {self.rmse(X, Y, F, W)}")
-            error.append(epoch_error)
-            self.learning_rate = _c.tune_lr(self.learning_rate, epoch)
-        return W, error
-
-
-class AdaMax(Optimizer):
-    def __init__(
-            self,
-            params: _c.DotDict
-    ):
-        Optimizer.__init__(self, params)
-        self.info = 'Adaptive Movement Estimation Based on the Infinity Norm'
-        if type(self.decay) != tuple:
-            raise ValueError('Parameter "decay" must be a tuple for adamax optimizer')
-        self.d1, self.d2 = self.decay[0], self.decay[1]
-
-    def update_cache1(self, cache, grad) -> np.ndarray:
-        return self.d1 * cache + (1 - self.d1) * grad
-
-    def update_cache2(self, cache, grad) -> np.ndarray:
-        return np.maximum(self.d2 * cache, np.abs(grad))
-
-    def run(
-            self,
-            X: np.ndarray,
-            Y: np.ndarray,
-            F: np.ndarray,
-            W: np.ndarray,
-    ) -> (np.ndarray, list):
-        error = []
-        cache1, cache2 = np.zeros((3 * len(F) + 1, 1)), np.zeros((3 * len(F) + 1, 1))
-        for epoch in range(self.n_iterations):
-            for i in range(len(X)):
-                err = np.mean(self.error(X[i:i + 1], Y[i:i + 1], F, W))
-                for n in range(len(F)):
-                    grads = self.L.grad(err, X[i:i + 1], F[n], W[3 * n + 1:3 * n + 4])
-                    cache1[3 * n + 1:3 * n + 4] = self.update_cache1(cache1[3 * n + 1:3 * n + 4], grads)
-                    cache2[3 * n + 1:3 * n + 4] = self.update_cache2(cache2[3 * n + 1:3 * n + 4], grads)
-                    M1 = cache1[3 * n + 1:3 * n + 4] / (1 - self.d1 ** (epoch + 1))
-                    M2 = cache2[3 * n + 1:3 * n + 4]
-                    W[3 * n + 1:3 * n + 4] -= self.learning_rate * M1 / (M2 + 1e-9)
-                if self.do_projection:
-                    W = self.projection(W, len(F))
-            epoch_error = self.error(X, Y, F, W)
-            if self.verbose:
-                print(f"Epoch {epoch + 1}: MAE = {self.mae(X, Y, F, W)}, RMSE = {self.rmse(X, Y, F, W)}")
-            error.append(epoch_error)
-            self.learning_rate = _c.tune_lr(self.learning_rate, epoch)
-        return W, error
-
-
-class MIXED(Optimizer):
-    def __init__(
-            self,
-            params: _c.DotDict
-    ):
-        Optimizer.__init__(self, params)
-        self.info = 'SGDM + PMSProp'
-        if type(self.decay) != tuple:
-            raise ValueError('Parameter "decay" must be a tuple for mixed optimizer')
-        self.d1, self.d2 = self.decay[0], self.decay[1]
-
-    def update_cache1(self, cache, grad) -> np.ndarray:
-        return self.d1 * cache + (1 - self.d1) * grad
-
-    def update_cache2(self, cache, grad) -> np.ndarray:
-        return self.d2 * cache + (1 - self.d2) * grad ** 2
-
-    def run(
-            self,
-            X: np.ndarray,
-            Y: np.ndarray,
-            F: np.ndarray,
-            W: np.ndarray,
-    ) -> (np.ndarray, list):
-        error = []
-        indx = np.arange(len(X))
-        cache1, cache2 = np.zeros((3 * len(F) + 1, 1)), np.zeros((3 * len(F) + 1, 1))
-        for epoch in range(self.n_iterations):
-            np.random.shuffle(indx)
-            portion = 1 / 2
-            indx1, indx2 = indx[:int(len(indx) * portion)], indx[int(len(indx) * portion):]
-            for i in range(len(indx1)):
-                err = np.mean(self.error(X[indx1][i:i + 1], Y[indx1][i:i + 1], F, W))
-                for n in range(len(F)):
-                    grads = self.L.grad(err, X[indx1][i:i + 1], F[n], W[3 * n + 1:3 * n + 4])
-                    cache1[3 * n + 1:3 * n + 4] = self.update_cache1(cache1[3 * n + 1:3 * n + 4], grads)
-                    W[3 * n + 1:3 * n + 4] -= self.learning_rate * cache1[3 * n + 1:3 * n + 4]
-                if self.do_projection:
-                    W = self.projection(W, len(F))
-            for i in range(len(indx2)):
-                err = np.mean(self.error(X[indx2][i:i + 1], Y[indx2][i:i + 1], F, W))
-                for n in range(len(F)):
-                    grads = self.L.grad(err, X[indx2][i:i + 1], F[n], W[3 * n + 1:3 * n + 4])
-                    cache2[3 * n + 1:3 * n + 4] = self.update_cache2(cache2[3 * n + 1:3 * n + 4], grads)
-                    W[3 * n + 1:3 * n + 4] -= self.learning_rate * grads / (np.sqrt(cache2[3 * n + 1:3 * n + 4]) + 1e-9)
-                if self.do_projection:
-                    W = self.projection(W, len(F))
-            epoch_error = self.error(X, Y, F, W)
-            if self.verbose:
-                print(f"Epoch {epoch + 1}: MAE = {self.mae(X, Y, F, W)}, RMSE = {self.rmse(X, Y, F, W)}")
-            error.append(epoch_error)
-            self.learning_rate = _c.tune_lr(self.learning_rate, epoch)
-        return W, error
+    @staticmethod
+    def plot(X, Y, F, W, epoch):
+        fig = plt.figure(figsize=(10, 7))
+        pred = _c.generate_signal(X, F, W)
+        plt.plot(X, Y)
+        plt.plot(X, pred, alpha=0.5)
+        ax = fig.add_axes([0.05, 0.05, 0.5, 0.3])
+        ax.plot(X[1000:1300], Y[1000:1300])
+        ax.plot(X[1000:1300], pred[1000:1300], alpha=0.5)
+        plt.tight_layout()
+        plt.savefig(f'/Users/brom/LAB/SCRIPTS/Golden Hits/pireg/tests/plot/{epoch}.png')
+        plt.show()

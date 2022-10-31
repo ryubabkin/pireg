@@ -1,47 +1,53 @@
 from pireg import PeriodicRegression
 import numpy as np
-from numpy import pi
+import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def y_sin(X, A, w, f):
-    return A * np.sin(X * w * 2 * pi + f)
+data = pd.read_csv('./tests/tempC.csv')
+data = data.set_index('time')
+data.index = pd.to_datetime(data.index)
+D = data['tempC']
 
+# D = data['Seattle']
+D = D.sort_index()
+X = ((D.index - D.index.min()).total_seconds() / 3600).astype(int)
+Y = D.values
 
-x1 = np.linspace(1, 121, 12000)
-x2 = np.linspace(1, 601, 60000)
-y1 = y_sin(x1, 1, 1/20, 0) + y_sin(x1, 2, 1 / 6, pi / 21) + y_sin(x1, 3, 1 / 13, pi / 3 * 5.1) + y_sin(x1, 3, 3.1,pi / 5.1)
-y2 = y_sin(x2, 1, 1/20, 0) + y_sin(x2, 2, 1 / 6, pi / 21) + y_sin(x2, 3, 1 / 13, pi / 3 * 5.1) + y_sin(x2, 3, 3.1,pi / 5.1)
+# lmodel = Ridge()
+#
+# lmodel.fit(X.values.reshape(-1, 1),
+#            Y.reshape(-1, 1))
+#
+# Y_lin = lmodel.predict(X.values.reshape(-1, 1))
+# Y = Y.reshape(-1, 1) - Y_lin
+Y = Y.flatten()
+x_train, y_train = X[:30000].values, Y[:30000]
 
+# %%
 reg = PeriodicRegression()
 reg.fit(
-    signal=y1,
-    interval=x1,
-    n_freq=4,
-    q_freq=0.99,
-    learning_rate=0.00001,
-    n_iterations=10,
-    decay=(0.09, 0.09),
-    optimizer='sgd',
-    loss='mse'
+    signal=y_train,
+    interval=x_train,
+    n_freq=2,
+    learning_rate=5e-5,
+    n_iterations=100,
+    decay=0.09,
+    loss='huber',
+    batch_size=4
 )
 reg.plot_spectrum(log=True)
+plt.figure()
 reg.plot_loss()
-pred = reg.predict(x2)
+plt.show()
+print(f'RMSE: {np.sqrt(np.mean(np.abs(y_train - y_train.mean()) ** 2))}')
+print(f'MAE: {np.mean(np.abs(y_train - y_train.mean()))}')
+#
+pred = reg.predict(X.values)
 
 plt.figure()
-plt.plot(x2, y2)
-plt.plot(x2, pred, alpha=0.5)
+plt.plot(X, D.values)
+plt.plot(X, pred, alpha=0.5)
 plt.show()
-#
-# [[ 5.00000000e-04  1.66666667e-03]
-#  [ 1.10469475e+00  2.20917871e+00]
-#  [-1.25472993e+00 -3.68711403e-01]
-#  [ 1.00000000e+00  1.00000000e+00]
-#  [ 1.00022746e+00  1.00148910e+00]]
-#
-# [[ 5.00000000e-04  1.66666667e-03]
-#  [ 1.10469475e+00  2.20917871e+00]
-#  [-1.25472993e+00 -3.68711403e-01]
-#  [ 1.00000000e+00  1.00000000e+00]
-#  [ 1.00022746e+00  1.00148722e+00]]
+
+# %% %%
