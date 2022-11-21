@@ -28,7 +28,7 @@ class Loss(object):
 
     @staticmethod
     def dphi(x, f, cc, A, phi):
-        return A * pi * sin(f * 2 * pi * cc * x - phi)
+        return A * sin(f * 2 * pi * cc * x - phi)
 
     def grad_basis(self, x, f, W):
         return np.array([
