@@ -7,7 +7,7 @@ import pandas as pd
 
 class Loss(object):
     """
-    {A} * cos (2 * pi * f * {cc} * X - {phi})
+    {A} * cos (2 * pi * f * {cc} * X + {phi})
     """
 
     def __init__(
@@ -20,15 +20,15 @@ class Loss(object):
 
     @staticmethod
     def dcc(x, f, cc, A, phi):
-        return - A * f * 2 * pi * x * sin(f * 2 * pi * cc * x - phi)
+        return - A * f * 2 * pi * x * sin(f * 2 * pi * cc * x + phi)
 
     @staticmethod
     def dA(x, f, cc, phi):
-        return cos(f * 2 * pi * cc * x - phi)
+        return cos(f * 2 * pi * cc * x + phi)
 
     @staticmethod
     def dphi(x, f, cc, A, phi):
-        return A * sin(f * 2 * pi * cc * x - phi)
+        return - A * sin(f * 2 * pi * cc * x + phi)
 
     def grad_basis(self, x, f, W):
         return np.array([
@@ -170,5 +170,5 @@ class Optimizer(object):
         ax.plot(X[1000:1300], Y[1000:1300])
         ax.plot(X[1000:1300], pred[1000:1300], alpha=0.5)
         plt.tight_layout()
-        plt.savefig(f'/Users/brom/LAB/SCRIPTS/Golden Hits/pireg/tests/plot/{epoch}.png')
+        plt.savefig(f'./tests/plot/{epoch}.png')
         plt.show()

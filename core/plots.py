@@ -98,16 +98,16 @@ def result_table(regr):
         freq_cc = round(freq * cc, 5)
         list_of_values += [[regr.frequencies[n], cc, freq_cc, intensity, phase]]
         if phase > 0:
-            formula += f" + {intensity}∙cos(2∙pi∙{freq_cc}∙X - {phase})"
+            formula += f" + {intensity}∙cos(2∙pi∙{freq_cc}∙X + {phase})"
         else:
-            formula += f" + {intensity}∙cos(2∙pi∙{freq_cc}∙X + {-phase})"
+            formula += f" + {intensity}∙cos(2∙pi∙{freq_cc}∙X - {-phase})"
     list_of_values += [['--------------', '', '', '', ''],
                        ['intercept (A₀)', intercept, '', '', '']]
     table.add_rows(list_of_values)
     print(table.draw())
     try:
         print('\nTotal Formula\n===============')
-        print("Y = A₀ + Σ[ Aᵢ∙cos(2π∙ωᵢ∙X - φᵢ) ]")
+        print("Y = A₀ + Σ[ Aᵢ∙cos(2π∙ωᵢ∙X + φᵢ) ]")
         print(formula)
         print()
     except:

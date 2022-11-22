@@ -29,7 +29,7 @@ def generate_signal(
     total = np.zeros(len(X))
     total += W[0]
     for n in range(len(F)):
-        total += W[3 * n + 2] * cos(2 * pi * F[n] * W[3 * n + 1] * X - W[3 * n + 3])
+        total += W[3 * n + 2] * cos(2 * pi * F[n] * W[3 * n + 1] * X + W[3 * n + 3])
     return total
 
 

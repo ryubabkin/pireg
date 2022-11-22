@@ -32,7 +32,7 @@ reg.fit(
     n_freq=2,
     learning_rate=5e-5,
     n_iterations=100,
-    decay=0.09,
+    momentum=0.09,
     loss='huber',
     batch_size=4
 )
